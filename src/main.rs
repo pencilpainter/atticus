@@ -1,8 +1,8 @@
-use floem::{window::WindowConfig, Application};
-
-use left_sidebar::full_window_view;
-pub mod left_sidebar;
+pub mod main_content;
 pub mod request_methods;
+
+use floem::{window::WindowConfig, Application};
+use main_content::full_window_view;
 
 fn main() {
     let wcfg = WindowConfig::default();

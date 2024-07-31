@@ -14,15 +14,19 @@ use floem::{
     IntoView, View,
 };
 
+use std::fs::File;
+use std::io::prelude::*;
 use std::thread;
 use crate::request_methods::{dropdown_view,AuthTypes};
 use std::fmt::Display;
+
+use serde::{Deserialize, Serialize};
 
 const SIDEBAR_WIDTH: f64 = 140.0;
 const TOPBAR_HEIGHT: f64 = 30.0;
 const SIDEBAR_ITEM_HEIGHT: f64 = 21.0;
 
-#[derive(PartialEq, Eq, Clone, Debug, Hash)]
+#[derive(PartialEq, Eq, Clone, Debug, Hash, Serialize, Deserialize)]
 enum Method {
     GET,
     POST,
@@ -46,21 +50,23 @@ impl Display for Method {
 }
 
 
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq,Serialize, Deserialize )]
 struct Request {
+    headers: im::Vector<(String, String)>,
     id : usize,
     url: String,
     method: Method,
     body: String,
-    token: String
+    auth: (Method, String)
 }
 
-fn send_request<T>(mthd: Method, bdy_txt: String, auth_type: AuthTypes, tkn_txt: String, url_txt: String, content: RwSignal<String>) 
+fn send_request<T>(mthd: Method, ht: String,hvt: String,  bdy_txt: String, auth_type: AuthTypes, tkn_txt: String, url_txt: String, content: RwSignal<String>) 
     {
                 let (tx, rx) = bounded(1);
                 thread::spawn(move || {
                     match_method_and_run::<String>(
-                        mthd, bdy_txt,
+                        mthd,ht, hvt,
+                        bdy_txt,
                         auth_type,
                         tkn_txt,
                         url_txt,
@@ -76,8 +82,12 @@ fn send_request<T>(mthd: Method, bdy_txt: String, auth_type: AuthTypes, tkn_txt:
 
 
 pub fn full_window_view() -> impl IntoView {
-    let url_list = im::Vector::<Request>::new();
-    let url_list= create_rw_signal(url_list);
+
+    let current_header_list = im::Vector::<(String,String)>::new();
+    let current_header_list = create_rw_signal(current_header_list);
+
+    let request_list = im::Vector::<Request>::new();
+    let request_list= create_rw_signal(request_list);
 
     let env_list: im::Vector<&str> = vec!["hi", "ehllo", "world"].into();
     let env_list = create_rw_signal(env_list);
@@ -89,6 +99,8 @@ pub fn full_window_view() -> impl IntoView {
     let urltext = create_rw_signal("https://example.com".to_string());
     let bodytext = create_rw_signal("{}".to_string());
     let tokentext = create_rw_signal("".to_string());
+    let headervaluetext = create_rw_signal("".to_string());
+    let headertext = create_rw_signal("".to_string());
     let authtype = create_rw_signal(AuthTypes::None);
     let top_bar = label(|| String::from("Top bar"))
         .style(|s| s.padding(10.0).width_full().height(TOPBAR_HEIGHT));
@@ -123,29 +135,35 @@ pub fn full_window_view() -> impl IntoView {
 
     let side_bar = scroll({
         v_stack(("Save current URL".class(ButtonClass).on_click_stop(move |_| {
-            url_list.update(|list| list.push_back(Request 
+            current_header_list.update(|v| v.push_back((headertext.get(), headervaluetext.get())));
+            request_list.update(|list| list.push_back(Request 
                     { id: list.len(),
                     url : urltext.get(),
                     method: method.get(),
                     body: bodytext.get(),
-                    token: tokentext.get()
-                    }))
+                    auth: (method.get(), tokentext.get()),
+                    headers : current_header_list.get()
+                    }));
+            let mut file = File::create("atticus.json").unwrap();
+            file.write(serde_json::to_string(&request_list.get()).unwrap().as_bytes()).unwrap();
         }),
         dyn_stack(
-            move || url_list.get(),
+            move || request_list.get(),
             move |item| item.clone(),
             move |item| {
                 h_stack ((
                         item.url.to_string().class(ButtonClass).on_click_stop(move |_| {
-                            url_list.update(|_| {
+                            request_list.update(|_| {
                                 urltext.set(item.url.to_string());
                                 set_method.set(item.method.clone());
                                 bodytext.set(item.body.to_string());
-                                tokentext.set(item.token.to_string());
+                                headertext.set(item.headers.head().unwrap().0.to_string());
+                                headervaluetext.set(item.headers.head().unwrap().1.to_string());
+                                tokentext.set(item.auth.1.to_string());
                             })
-                        }),
+                        }).style(|s| s.width(50)),
                         "🗑️".class(ButtonClass).on_click_stop(move |_| {
-                            url_list.update(|list| {if list.len() > 0 {}})
+                            request_list.update(|list| {if list.len() > 0 {}})
                         }),
                 ))
             },
@@ -196,7 +214,9 @@ pub fn full_window_view() -> impl IntoView {
                 let auth_type = authtype.get();
                 let tkn_txt = tokentext.get();
                 let url_txt = urltext.get() ;
-                send_request::<String>(mthd, bdy_txt, auth_type, tkn_txt, url_txt, content) } ),
+                let hvt = headervaluetext.get() ;
+                let ht = headertext.get() ;
+                send_request::<String>(mthd, ht, hvt, bdy_txt, auth_type, tkn_txt, url_txt, content) } ),
         text_input(urltext)
             .placeholder("Placeholder text")
             .keyboard_navigatable()
@@ -206,10 +226,25 @@ pub fn full_window_view() -> impl IntoView {
                 let auth_type = authtype.get();
                 let tkn_txt = tokentext.get();
                 let url_txt = urltext.get() ;
-                send_request::<String>(mthd, bdy_txt, auth_type, tkn_txt, url_txt, content) })
+                let hvt = headervaluetext.get() ;
+                let ht = headertext.get() ;
+                send_request::<String>(mthd, ht, hvt, bdy_txt, auth_type, tkn_txt, url_txt, content) })
             .style(|s| s.flex_grow(1.0).width_pct(100.)),
 
             )).style(|s| s.width_full());
+
+
+    let header_bar = h_stack ((
+                        label(|| "headers"),
+                        text_input(headertext)
+                            .placeholder("header") 
+                            .keyboard_navigatable()
+                            .style(|s| s.flex_grow(1.0).width_pct(100.)),
+                        text_input(headervaluetext)
+                            .placeholder("value") 
+                            .keyboard_navigatable()
+                            .style(|s| s.flex_grow(1.0).width_pct(100.))
+                    ));
 
     let auth_bar = h_stack ((
                             dropdown_view::<AuthTypes>(authtype).style(|s| s.width(150)),
@@ -230,6 +265,7 @@ pub fn full_window_view() -> impl IntoView {
                     url_bar,
                     body_field,
                     auth_bar,
+                    header_bar,
 /* Response box */ label(move || format!("{}", content.get())), 
         )))
         .style(|s| { s.flex_col() .flex_basis(0) .flex_grow(1.0) .border_top(1.0) .border_color(Color::rgb8(205, 205, 205)) });
@@ -253,7 +289,7 @@ pub fn full_window_view() -> impl IntoView {
     })
 }
 
-fn match_method_and_run<T>(mthd: Method, bodytext: String, auth: AuthTypes, tokentext: String, url: String, tx: crossbeam_channel::Sender<String>) {
+fn match_method_and_run<T>(mthd: Method,ht: String, hvt: String,  bodytext: String, auth: AuthTypes, tokentext: String, url: String, tx: crossbeam_channel::Sender<String>) {
     let  c = reqwest::blocking::Client::new();
     let mut b;
     match mthd {
@@ -264,6 +300,9 @@ fn match_method_and_run<T>(mthd: Method, bodytext: String, auth: AuthTypes, toke
         Method::PUT => { b = c.put(url); b = b.body(bodytext); }
         Method::PATCH => { b = c.put(url); b = b.body(bodytext); }
     }
+
+   
+    b = b.header(ht, hvt);
 
     //add the token 
     match auth {
