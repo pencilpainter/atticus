@@ -52,6 +52,7 @@ impl Display for Method {
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq,Serialize, Deserialize )]
 struct Request {
+    name: Option<String>,
     headers: im::Vector<(String, String)>,
     id : usize,
     url: String,
@@ -61,32 +62,35 @@ struct Request {
 }
 
 fn send_request<T>(mthd: Method, ht: String,hvt: String,  bdy_txt: String, auth_type: AuthTypes, tkn_txt: String, url_txt: String, content: RwSignal<String>) 
-    {
-                let (tx, rx) = bounded(1);
-                thread::spawn(move || {
-                    match_method_and_run::<String>(
-                        mthd,ht, hvt,
-                        bdy_txt,
-                        auth_type,
-                        tkn_txt,
-                        url_txt,
-                        tx);
-                });
-                let sig = create_signal_from_channel(rx.clone());
-                create_effect(move |_| {
-                    if let Some(v2) = sig.get() {
-                        content.set(v2);
-                    }
-                })
-            }
+{
+    let (tx, rx) = bounded(1);
+    thread::spawn(move || {
+        match_method_and_run::<String>(
+            mthd,ht, hvt, bdy_txt, auth_type, tkn_txt, url_txt, tx);
+    });
+    let sig = create_signal_from_channel(rx.clone());
+    create_effect(move |_| {
+        if let Some(v2) = sig.get() {
+            content.set(v2);
+        }
+    })
+}
 
 
 pub fn full_window_view() -> impl IntoView {
 
+
+    let mut f = File::open("atticus.json").unwrap();
+    let mut data = vec![];
+    f.read_to_end(&mut data).unwrap();
+
+    let saved_req = serde_json::from_slice::<im::Vector<Request>>(&data)
+        .unwrap_or( ::im::Vector::<Request>::new());
+
     let current_header_list = im::Vector::<(String,String)>::new();
     let current_header_list = create_rw_signal(current_header_list);
 
-    let request_list = im::Vector::<Request>::new();
+    let request_list = saved_req ;
     let request_list= create_rw_signal(request_list);
 
     let env_list: im::Vector<&str> = vec!["hi", "ehllo", "world"].into();
@@ -97,6 +101,7 @@ pub fn full_window_view() -> impl IntoView {
     let content = create_rw_signal("".to_string());
 
     let urltext = create_rw_signal("https://example.com".to_string());
+    let request_name = create_rw_signal("New request".to_string());
     let bodytext = create_rw_signal("{}".to_string());
     let tokentext = create_rw_signal("".to_string());
     let headervaluetext = create_rw_signal("".to_string());
@@ -137,12 +142,14 @@ pub fn full_window_view() -> impl IntoView {
         v_stack(("Save current URL".class(ButtonClass).on_click_stop(move |_| {
             current_header_list.update(|v| v.push_back((headertext.get(), headervaluetext.get())));
             request_list.update(|list| list.push_back(Request 
-                    { id: list.len(),
-                    url : urltext.get(),
-                    method: method.get(),
-                    body: bodytext.get(),
-                    auth: (method.get(), tokentext.get()),
-                    headers : current_header_list.get()
+                    {
+                        name: Some(request_name.get()),
+                        id: list.len(),
+                        url : urltext.get(),
+                        method: method.get(),
+                        body: bodytext.get(),
+                        auth: (method.get(), tokentext.get()),
+                        headers : current_header_list.get()
                     }));
             let mut file = File::create("atticus.json").unwrap();
             file.write(serde_json::to_string(&request_list.get()).unwrap().as_bytes()).unwrap();
@@ -154,6 +161,8 @@ pub fn full_window_view() -> impl IntoView {
                 h_stack ((
                         item.url.to_string().class(ButtonClass).on_click_stop(move |_| {
                             request_list.update(|_| {
+                                request_name.set(item.name.clone()
+                                    .or(Some(urltext.get())).unwrap().to_string());
                                 urltext.set(item.url.to_string());
                                 set_method.set(item.method.clone());
                                 bodytext.set(item.body.to_string());
@@ -161,9 +170,18 @@ pub fn full_window_view() -> impl IntoView {
                                 headervaluetext.set(item.headers.head().unwrap().1.to_string());
                                 tokentext.set(item.auth.1.to_string());
                             })
-                        }).style(|s| s.width(50)),
+                        }).style(|s| s.width(100)),
                         "🗑️".class(ButtonClass).on_click_stop(move |_| {
-                            request_list.update(|list| {if list.len() > 0 {}})
+                            request_list.update(|list| {
+                                if list.len() > 1 {
+                                list.remove(item.id);
+                                }
+                                else {
+                                    *list = im::Vector::<Request>::new();
+                                }
+                                let mut file = File::create("atticus.json").unwrap();
+                                file.write(serde_json::to_string(list).unwrap().as_bytes()).unwrap();
+                            })
                         }),
                 ))
             },
@@ -234,6 +252,12 @@ pub fn full_window_view() -> impl IntoView {
             )).style(|s| s.width_full());
 
 
+
+    let name_box =  text_input(request_name)
+      .placeholder("New Request") 
+      .keyboard_navigatable()
+      .style(|s| s.flex_grow(1.0).width_pct(100.));
+    
     let header_bar = h_stack ((
                         label(|| "headers"),
                         text_input(headertext)
@@ -261,6 +285,7 @@ pub fn full_window_view() -> impl IntoView {
 
     let main_block =
         scroll(v_stack(( 
+                    name_box, 
                     methods_list,
                     url_bar,
                     body_field,
