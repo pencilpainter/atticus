@@ -52,9 +52,8 @@ impl Display for Method {
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq,Serialize, Deserialize )]
 struct Request {
-    name: Option<String>,
+    name: String,
     headers: im::Vector<(String, String)>,
-    id : usize,
     url: String,
     method: Method,
     body: String,
@@ -80,9 +79,12 @@ fn send_request<T>(mthd: Method, ht: String,hvt: String,  bdy_txt: String, auth_
 pub fn full_window_view() -> impl IntoView {
 
 
-    let mut f = File::open("atticus.json").unwrap();
     let mut data = vec![];
-    f.read_to_end(&mut data).unwrap();
+    if let Ok(mut f) = File::open("atticus.json") {
+        let _ = f.read_to_end(&mut data);
+    } else {
+        data = Vec::<u8>::new();
+    };
 
     let saved_req = serde_json::from_slice::<im::Vector<Request>>(&data)
         .unwrap_or( ::im::Vector::<Request>::new());
@@ -143,8 +145,7 @@ pub fn full_window_view() -> impl IntoView {
             current_header_list.update(|v| v.push_back((headertext.get(), headervaluetext.get())));
             request_list.update(|list| list.push_back(Request 
                     {
-                        name: Some(request_name.get()),
-                        id: list.len(),
+                        name: request_name.get(),
                         url : urltext.get(),
                         method: method.get(),
                         body: bodytext.get(),
@@ -158,27 +159,24 @@ pub fn full_window_view() -> impl IntoView {
             move || request_list.get(),
             move |item| item.clone(),
             move |item| {
+                                let itm = item.clone();
                 h_stack ((
-                        item.url.to_string().class(ButtonClass).on_click_stop(move |_| {
+                        item.name.to_string().class(ButtonClass).on_click_stop(move |_| {
                             request_list.update(|_| {
-                                request_name.set(item.name.clone()
-                                    .or(Some(urltext.get())).unwrap().to_string());
-                                urltext.set(item.url.to_string());
-                                set_method.set(item.method.clone());
-                                bodytext.set(item.body.to_string());
-                                headertext.set(item.headers.head().unwrap().0.to_string());
-                                headervaluetext.set(item.headers.head().unwrap().1.to_string());
-                                tokentext.set(item.auth.1.to_string());
+                                request_name.set(itm.name.clone());
+                                urltext.set(itm.url.to_string());
+                                set_method.set(itm.method.clone());
+                                bodytext.set(itm.body.clone().to_string());
+                                headertext.set(itm.headers.head().unwrap().0.to_string());
+                                headervaluetext.set(itm.headers.head().unwrap().1.to_string());
+                                tokentext.set(itm.auth.1.to_string());
                             })
                         }).style(|s| s.width(100)),
-                        "🗑️".class(ButtonClass).on_click_stop(move |_| {
+                        "🗑️ "
+                        .class(ButtonClass).on_click_stop( move |_| {
                             request_list.update(|list| {
-                                if list.len() > 1 {
-                                list.remove(item.id);
-                                }
-                                else {
-                                    *list = im::Vector::<Request>::new();
-                                }
+                                list.remove(
+                                    list.iter().enumerate().find(|f| f.1.name == item.name).unwrap().0);
                                 let mut file = File::create("atticus.json").unwrap();
                                 file.write(serde_json::to_string(list).unwrap().as_bytes()).unwrap();
                             })
