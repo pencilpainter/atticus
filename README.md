@@ -1,6 +1,6 @@
 # Atticus
 
-Atticus is an attempt to simplify the "API runner" application
+Atticus is an attempt to simplify the "API runner/Tester" application experience.
 
 ## Motivation
 Postman had me frustrated.
