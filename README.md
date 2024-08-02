@@ -2,7 +2,7 @@
 
 Atticus is an attempt to simplify the "API runner" application
 
-# Motivation: 
+# Motivation
  Postman, being the default API runner, and testing utility, had me frustrated.
   1. it gets painfully slow (especially with larger payloads, or if you have tons of tabs open..)
   2. Occasionally, it just refuses to work (presumably because it's having difficulty phoning home? )
