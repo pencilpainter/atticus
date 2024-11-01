@@ -1,3 +1,6 @@
+pub mod auth_methods;
+pub mod collections;
+pub mod environments;
 pub mod main_content;
 pub mod request_methods;
 
