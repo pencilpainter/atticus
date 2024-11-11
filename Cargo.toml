@@ -15,3 +15,4 @@ strum = { version = "0.26.3", features = ["derive"] }
 serde = { version = "1.0.204", features = ["derive"] }
 jsonformat = "2.0.0"
 image = "0.25"
+nsvg = "0.5.1"

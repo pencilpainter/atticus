@@ -62,7 +62,7 @@ pub fn full_window_view() -> impl IntoView {
     let (method, set_method) = create_signal(Method::GET);
 
     let body_label = text_editor("")
-        .style(|s| s.flex_grow(1.0).width_pct(100.).height(500.));
+        .style(|s| s.flex_grow(1.0).width_pct(100.));
 
     let top_bar = label(|| String::from("Top bar"))
         .style(|s| s.padding(10.0).width_full().height(TOPBAR_HEIGHT));
@@ -247,10 +247,12 @@ pub fn full_window_view() -> impl IntoView {
     ))
     .style(|s| s.width_full());
 
-    let name_box = text_input(request_name)
-        .placeholder("New Request")
-        .keyboard_navigatable()
-        .style(|s| s.flex_grow(1.0).width_pct(100.));
+    let name_box = h_stack((
+                text_input(request_name)
+                .placeholder("New Request") 
+                .keyboard_navigatable()
+                .style(|s| s.flex_grow(1.0).width_pct(100.)),
+    ));
 
     let header_bar = h_stack((
         label(|| "headers"),
@@ -272,10 +274,11 @@ pub fn full_window_view() -> impl IntoView {
             .style(|s| s.flex_grow(1.0).width_pct(100.)),
     ));
 
-    let body_field = text_input(bodytext)
+    let body_field = h_stack((text_input(bodytext)
         .placeholder("request body. . .")
         .keyboard_navigatable()
-        .style(|s| s.flex_grow(1.0).width_pct(100.));
+        .style(|s| s.flex_grow(1.0).width_pct(100.)),
+    ));
 
 
 
@@ -287,13 +290,9 @@ pub fn full_window_view() -> impl IntoView {
         auth_bar,
         header_bar,
         body_label 
-    )))
-    .style(|s| {
-        s.flex_col()
-            .flex_basis(0)
-            .flex_grow(1.0)
-            .border_top(1.0)
-            .border_color(Color::rgb8(205, 205, 205))
+    ))
+    .style(|s| { s.width_full().height_full() }))
+    .style(|s| { s.flex_col() .flex_basis(0) .flex_grow(1.0) .border_top(1.0) .border_color(Color::rgb8(205, 205, 205))
     });
 
     let content_pane = h_stack((collection_side_bar, main_block)).style(|s| {
