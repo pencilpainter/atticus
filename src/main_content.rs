@@ -6,7 +6,7 @@ use floem::{
         style::Position,
     keyboard::{Key, Modifiers, ModifiersState, NamedKey},
     peniko::Color,
-    reactive::{create_effect, create_rw_signal, create_signal, RwSignal, SignalGet, SignalUpdate},
+    reactive::{create_effect, create_rw_signal, create_signal, SignalGet, SignalUpdate},
     views::{
         dyn_stack, h_stack, label, labeled_radio_button, scroll, text_input, text_editor,
         v_stack, ButtonClass, Decorators, editor::text::Document,
@@ -50,7 +50,7 @@ fn send_request<T>(
 
     create_effect(move |_| {
         if let Some(v2) = sig.get() {
-            content.edit_single(Selection::caret(0), &v2, EditType::InsertChars);
+                content.edit_single(Selection::region(0, content.text().len()), &v2, EditType::InsertChars);
         }
     });
 }
@@ -369,12 +369,9 @@ fn match_method_and_run<T>(
         .text()
         .expect("could not get text");
 
-    let _ = tx.send(format!("formatting response:\n{}",rsp.clone()));
-
+    let _ = tx.send(format!("formatting response... "));
     let rs = jsonformat::format(&rsp, jsonformat::Indentation::FourSpace);
     
-    let _ = tx.send(format!("done formatting"));
-
     let _ = tx.send(rs);
 
  //   let mut skip = 0;
@@ -396,69 +393,3 @@ fn match_method_and_run<T>(
  //   }
 }
 
-fn pretty_print(value: &str, chunk: usize, skip: usize, indent: usize) -> (String, usize) {
-    let mut indent_level = indent;
-    let mut chunk_mut = chunk;
-    let rest;
-    let mut mut_skip = skip;
-
-    if skip > value.len() {
-        println!("skipping skip");
-        rest = value;
-    } else {
-        loop {
-            let rest_o = value.split_at_checked(mut_skip);
-            if rest_o.is_none() {
-                mut_skip += 1;
-            } else {
-                rest = rest_o.unwrap().1;
-                break;
-            }
-        }
-    }
-
-    let mut chunks;
-    loop {
-        chunks = rest.split_at_checked(chunk_mut);
-        if chunks.is_none() {
-            chunk_mut += 1;
-        } else {
-            break;
-        }
-    }
-
-    let mut fmt_chunk = "".to_string();
-    let mut spaces = vec![' '; indent_level];
-    let mut s = String::from_iter(spaces.clone());
-
-    for (_, c) in chunks.unwrap().0.chars().enumerate() {
-        if indent_level != spaces.len() {
-            spaces = vec![' '; indent_level * 4];
-            s = String::from_iter(spaces.clone());
-        }
-
-        if c == ',' {
-            fmt_chunk.push(c);
-            fmt_chunk.push('\n');
-            fmt_chunk.push_str(&s);
-        } else if c == '{' || c == '[' {
-            fmt_chunk.push('\n');
-            fmt_chunk.push_str(&s);
-            fmt_chunk.push(c);
-            fmt_chunk.push('\n');
-            fmt_chunk.push_str(&s);
-            indent_level += 1;
-        } else if c == ']' || c == '}' {
-            fmt_chunk.push('\n');
-            fmt_chunk.push_str(&s);
-            fmt_chunk.push(c);
-            indent_level -= 1;
-        } else {
-            fmt_chunk.push(c);
-        }
-    }
-
-    let ch = fmt_chunk.clone();
-
-    (ch, indent_level)
-}
