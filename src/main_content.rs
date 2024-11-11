@@ -15,6 +15,8 @@ use floem::{
             }, 
         },
     IntoView, View,
+    style_class,
+    unit::DurationUnitExt,
 };
 use jsonformat;
 
@@ -27,6 +29,11 @@ use std::{fs::File, time::Duration};
 
 pub const SIDEBAR_WIDTH: f64 = 140.0;
 const TOPBAR_HEIGHT: f64 = 30.0;
+
+
+style_class!(pub Button);
+style_class!(pub Label);
+style_class!(pub Frame);
 
 fn send_request<T>(
     mthd: Method,
@@ -58,14 +65,16 @@ fn send_request<T>(
 pub fn full_window_view() -> impl IntoView {
     //let env_list: im::Vector<&str> = vec!["hi", "ehllo", "world"].into();
     //let env_list = create_rw_signal(env_list);
+    //
 
     let (method, set_method) = create_signal(Method::GET);
 
     let body_label = text_editor("")
-        .style(|s| s.flex_grow(1.0).width_pct(100.));
+        .style(|s| s.flex_grow(1.0).width_pct(100.))
+        .read_only();
 
     let top_bar = label(|| String::from("Top bar"))
-        .style(|s| s.padding(10.0).width_full().height(TOPBAR_HEIGHT));
+        .style(|s| s.padding(10.0).width_full().height(TOPBAR_HEIGHT).margin(2));
 
     let current_header_list = im::Vector::<(String, String)>::new();
     let current_header_list = create_rw_signal(current_header_list);
