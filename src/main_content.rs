@@ -6,7 +6,7 @@ use floem::{
         style::Position,
     keyboard::{Key, Modifiers, ModifiersState, NamedKey},
     peniko::Color,
-    reactive::{create_effect, create_rw_signal, create_signal, SignalGet, SignalUpdate},
+    reactive::{create_effect, create_rw_signal, create_signal, SignalGet, SignalUpdate,RwSignal},
     views::{
         dyn_stack, h_stack, label, labeled_radio_button, scroll, text_input, text_editor,
         v_stack, ButtonClass, Decorators, editor::text::Document,
@@ -25,7 +25,7 @@ use crate::collections::Request; //Collection,
 use crate::request_methods::Method;
 use std::io::prelude::*;
 use std::thread;
-use std::{fs::File, time::Duration};
+use std::{fs::File, time::Duration, time::Instant} ;
 
 pub const SIDEBAR_WIDTH: f64 = 140.0;
 const TOPBAR_HEIGHT: f64 = 30.0;
@@ -37,24 +37,23 @@ style_class!(pub Frame);
 
 fn send_request<T>(
     mthd: Method,
-    ht: String,
-    hvt: String,
+    headers: im::Vector<(String, String)>,
     bdy_txt: String,
     auth_type: AuthTypes,
     tkn_txt: String,
     url_txt: String,
-    content: Rc<dyn Document>
+    content: Rc<dyn Document>,
+    status: RwSignal<String>
 ) {
     let (tx, rx) = bounded(1);
     let sig = create_signal_from_channel(rx.clone());
 
-    content.edit_single(Selection::caret(0), "Waiting for response", EditType::InsertChars);
-
-    // get the response and put it in the box
+    // get the response and send it to the channel signal
     thread::spawn(move || {
-        match_method_and_run::<String>(mthd, ht, hvt, bdy_txt, auth_type, tkn_txt, url_txt, tx);
+        match_method_and_run::<String>(mthd, headers, bdy_txt, auth_type, tkn_txt, url_txt, tx, status);
     });
 
+    // when the channel sends the signal, write it to the edit.
     create_effect(move |_| {
         if let Some(v2) = sig.get() {
                 content.edit_single(Selection::region(0, content.text().len()), &v2, EditType::InsertChars);
@@ -75,8 +74,9 @@ pub fn full_window_view() -> impl IntoView {
 
     let top_bar = label(|| String::from("Top bar"))
         .style(|s| s.padding(10.0).width_full().height(TOPBAR_HEIGHT).margin(2));
+    
 
-    let current_header_list = im::Vector::<(String, String)>::new();
+    let mut current_header_list = im::Vector::<(String, String)>::new();
     let current_header_list = create_rw_signal(current_header_list);
 
     let mut data = vec![];
@@ -91,6 +91,10 @@ pub fn full_window_view() -> impl IntoView {
 
     let request_list = saved_req;
     let request_list = create_rw_signal(request_list);
+
+    let status_text = create_rw_signal(" . . . ".to_string());
+
+    let request_status = label( move || status_text.get());
 
     let urltext = create_rw_signal("https://example.com".to_string());
     let request_name = create_rw_signal("New request".to_string());
@@ -115,8 +119,6 @@ pub fn full_window_view() -> impl IntoView {
     let collection_side_bar = scroll({
         v_stack((
             "Save".class(ButtonClass).on_click_stop(move |_| {
-                current_header_list
-                    .update(|v| v.push_back((headertext.get(), headervaluetext.get())));
                 request_list.update(|list| {
                     list.push_back(Request {
                         name: request_name.get(),
@@ -166,8 +168,7 @@ pub fn full_window_view() -> impl IntoView {
                                     urltext.set(itm.url.to_string());
                                     set_method.set(itm.method.clone());
                                     bodytext.set(itm.body.clone().to_string());
-                                    headertext.set(itm.headers.head().unwrap().0.to_string());
-                                    headervaluetext.set(itm.headers.head().unwrap().1.to_string());
+                                    current_header_list.update(|l| { *l = itm.headers.clone();});
                                     tokentext.set(itm.auth.1.to_string());
                                     authtype.set(itm.auth.0);
                                 })
@@ -229,9 +230,8 @@ pub fn full_window_view() -> impl IntoView {
             let auth_type = authtype.get();
             let tkn_txt = tokentext.get();
             let url_txt = urltext.get();
-            let hvt = headervaluetext.get();
-            let ht = headertext.get();
-            send_request::<String>(mthd, ht, hvt, bdy_txt, auth_type, tkn_txt, url_txt, doc.clone())
+            let headers =  current_header_list.get();
+            send_request::<String>(mthd, headers, bdy_txt, auth_type, tkn_txt, url_txt, doc.clone(), status_text)
         }),
         text_input(urltext)
             .placeholder("Placeholder text")
@@ -245,11 +245,8 @@ pub fn full_window_view() -> impl IntoView {
                     let auth_type = authtype.get();
                     let tkn_txt = tokentext.get();
                     let url_txt = urltext.get();
-                    let hvt = headervaluetext.get();
-                    let ht = headertext.get();
-                    send_request::<String>(
-                        mthd, ht, hvt, bdy_txt, auth_type, tkn_txt, url_txt, doc2.clone() ,
-                    )
+                    let headers =  current_header_list.get();
+                    send_request::<String>(mthd, headers, bdy_txt, auth_type, tkn_txt, url_txt, doc2.clone(), status_text)
                 },
             )
             .style(|s| s.flex_grow(1.0).width_pct(100.)),
@@ -263,17 +260,38 @@ pub fn full_window_view() -> impl IntoView {
                 .style(|s| s.flex_grow(1.0).width_pct(100.)),
     ));
 
-    let header_bar = h_stack((
-        label(|| "headers"),
+    let header_add_bar = h_stack((
         text_input(headertext)
             .placeholder("header")
-            .keyboard_navigatable()
-            .style(|s| s.flex_grow(1.0).width_pct(100.)),
+            .keyboard_navigatable() .style(|s| s.flex_grow(1.0).width_pct(100.)),
         text_input(headervaluetext)
             .placeholder("value")
             .keyboard_navigatable()
             .style(|s| s.flex_grow(1.0).width_pct(100.)),
+            "➕".class(ButtonClass).on_click_stop(move |_| {
+                    current_header_list.update(|v| v.push_back((headertext.get(), headervaluetext.get())));
+                    headertext.set("".to_string());
+                    headervaluetext.set("".to_string());
+                            }),
     ));
+
+    let header_bar =  dyn_stack(
+        move || current_header_list.get(),
+        move |item| item.clone(),
+        move |item| {
+            let itm = item.clone();
+            let header = itm.0.clone();
+            let value = itm.1.clone();
+            h_stack((
+                    label( move || header.clone() )
+                    .style(|s| s.flex_grow(1.0).width_pct(100.)),
+                    label( move || value.clone() )
+                    .style(|s| s.flex_grow(1.0).width_pct(100.)),
+                    "➖". class(ButtonClass).on_click_stop(move |_| {
+                        let _ = current_header_list.update(|v| { let _ = v.pop_back(); });
+                    }).style(|s| s.flex_grow(1.0)),
+            )) 
+        } ).style(|s| s.flex_col().width_pct(100.));
 
     let auth_bar = h_stack((
         dropdown_view::<AuthTypes>(authtype).style(|s| s.width(150)),
@@ -297,7 +315,9 @@ pub fn full_window_view() -> impl IntoView {
         url_bar,
         body_field,
         auth_bar,
+        header_add_bar,
         header_bar,
+        status_text,
         body_label 
     ))
     .style(|s| { s.width_full().height_full() }))
@@ -325,13 +345,13 @@ pub fn full_window_view() -> impl IntoView {
 
 fn match_method_and_run<T>(
     mthd: Method,
-    ht: String,
-    hvt: String,
+    headers: im::Vector<(String, String)>, 
     bodytext: String,
     auth: AuthTypes,
     tokentext: String,
     url: String,
     tx: crossbeam_channel::Sender<String>,
+    status: RwSignal<String>
 ) {
     let c = reqwest::blocking::Client::new();
     let mut b;
@@ -359,7 +379,11 @@ fn match_method_and_run<T>(
         }
     }
 
-    b = b.header(ht, hvt);
+
+    headers.iter().for_each( |h| {
+        let d = b.try_clone().expect("could not clone the builder");
+        b = d.header(h.0.clone(), h.1.clone());
+    });
 
     match auth {
         AuthTypes::Bearer => {
@@ -368,36 +392,47 @@ fn match_method_and_run<T>(
         AuthTypes::None => {}
     }
 
+    let start_time = Instant::now();
+    let tx_clone = tx.clone();
+
+    let mut br = false;
+    
     let _ = tx.send("sending request ... ".to_string());
+
+    let (tx1, rx1) = bounded(1);
+    thread::spawn(move || {
+        loop {
+
+            if let Ok(br) = rx1.try_recv()
+            { 
+                break;
+            } 
+            
+            let elapsed = start_time.elapsed();
+            let seconds = elapsed.as_secs();
+            let message = format!("sending request... Elapsed time: {}s", seconds);
+           
+            status.update (|v| {*v = message;} );
+        
+            thread::sleep(Duration::from_secs(1));
+        }
+    });
+
+
 
     let rsp = b
         .timeout(Duration::from_secs(3600))
         .send()
-        .expect("cold not end")
+        .expect("could not send")
         .text()
         .expect("could not get text");
+
+    tx1.send(true);
 
     let _ = tx.send(format!("formatting response... "));
     let rs = jsonformat::format(&rsp, jsonformat::Indentation::FourSpace);
     
     let _ = tx.send(rs);
 
- //   let mut skip = 0;
- //   let mut msg = "".to_string();
- //   let mut indnt = 0;
-
- //   let mut prtty: (String, usize);
- //   loop {
- //       prtty = pretty_print(&rsp, 10000, skip * 10000, indnt);
- //       skip += 1;
- //       msg += &prtty.0;
- //       indnt = prtty.1;
-
- //       if prtty.0.len() == 0 {
- //           break;
- //       }
- //       let _ = tx.send(msg.clone());
- //       thread::sleep(Duration::from_millis(500));
- //   }
 }
 
