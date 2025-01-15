@@ -44,15 +44,15 @@ fn send_request<T>(
     tkn_txt: String,
     url_txt: String,
     content: Rc<dyn Document>,
-    status: RwSignal<String>,
+    sx1: crossbeam_channel::Sender<String>,
 ) {
-    let (tx, rx) = bounded(1);
+    let (sx, rx) = bounded(1);
     let sig = create_signal_from_channel(rx.clone());
 
     // get the response and send it to the channel signal
     thread::spawn(move || {
         match_method_and_run::<String>(
-            mthd, headers, bdy_txt, auth_type, tkn_txt, url_txt, tx, status,
+            mthd, headers, bdy_txt, auth_type, tkn_txt, url_txt, sx, sx1,
         );
     });
 
@@ -75,14 +75,7 @@ pub fn full_window_view() -> impl IntoView {
 
     let (method, set_method) = create_signal(Method::GET);
 
-    let body_response = text_editor("")
-        .style(|s| {
-            s.flex_grow(1.0)
-                .width_pct(100.)
-                .font_family("".to_string())
-                .font_size(8)
-        })
-        .read_only();
+    let body_response = text_editor("").read_only();
 
     let body_field = text_editor("")
         .placeholder("request body. . .")
@@ -254,16 +247,27 @@ pub fn full_window_view() -> impl IntoView {
     let doc = body_response.doc().clone();
     let doc2 = body_response.doc().clone();
 
-    let bodyfield = body_field.doc().clone();
-    let bodyfield2 = body_field.doc().clone();
+    let (sx1, rx1) = bounded(1);
+    let sx2 = sx1.clone();
+
+    let sig2 = create_signal_from_channel(rx1.clone());
+    create_effect(move |_| {
+        if let Some(v2) = sig2.get() {
+            status_text.update(|v| *v = v2);
+        }
+    });
+
+    let bf3 = body_field.doc();
 
     let send_button = "Send request".class(ButtonClass).on_click_stop(move |_| {
         let mthd = method.get();
-        let bdy_txt = bodyfield.text().to_string();
+        let bdy_txt = bf3.text().to_string();
         let auth_type = authtype.get();
         let tkn_txt = tokentext.get();
         let url_txt = urltext.get();
         let headers = current_header_list.get();
+
+        let sx0_clone = sx1.clone();
         send_request::<String>(
             mthd,
             headers,
@@ -272,9 +276,11 @@ pub fn full_window_view() -> impl IntoView {
             tkn_txt,
             url_txt,
             doc.clone(),
-            status_text,
+            sx0_clone,
         )
     });
+
+    let bf4 = body_field.doc().clone();
 
     let url_bar = h_stack((text_input(urltext)
         .placeholder("Placeholder text")
@@ -284,11 +290,12 @@ pub fn full_window_view() -> impl IntoView {
             Modifiers::from(ModifiersState::empty()),
             move |_| {
                 let mthd = method.get();
-                let bdy_txt = bodyfield2.text().to_string();
+                let bdy_txt = bf4.text().to_string();
                 let auth_type = authtype.get();
                 let tkn_txt = tokentext.get();
                 let url_txt = urltext.get();
                 let headers = current_header_list.get();
+                let sx2_clone = sx2.clone();
                 send_request::<String>(
                     mthd,
                     headers,
@@ -297,7 +304,7 @@ pub fn full_window_view() -> impl IntoView {
                     tkn_txt,
                     url_txt,
                     doc2.clone(),
-                    status_text,
+                    sx2_clone,
                 )
             },
         )
@@ -369,7 +376,8 @@ pub fn full_window_view() -> impl IntoView {
             ))
             .style(|s| s.width_full()),
             status_text,
-            tab_navigation_view(body_response.doc().clone()),
+            body_response,
+            tab_navigation_view(),
         ))
         .style(|s| s.width_full().height_full()),
     )
@@ -408,8 +416,8 @@ fn match_method_and_run<T>(
     auth: AuthTypes,
     tokentext: String,
     url: String,
-    tx: crossbeam_channel::Sender<String>,
-    status: RwSignal<String>,
+    sx: crossbeam_channel::Sender<String>,
+    sx1: crossbeam_channel::Sender<String>,
 ) {
     let c = reqwest::blocking::Client::new();
     let mut b;
@@ -451,7 +459,7 @@ fn match_method_and_run<T>(
 
     let start_time = Instant::now();
 
-    let _ = tx.send("sending request ... ".to_string());
+    let _ = sx.send("sending request ... ".to_string());
 
     let (tx1, rx1) = bounded(1);
     thread::spawn(move || loop {
@@ -463,10 +471,7 @@ fn match_method_and_run<T>(
         let seconds = elapsed.as_secs();
         let message = format!("sending request... Elapsed time: {}s", seconds);
 
-        status.update(|v| {
-            *v = message;
-        });
-
+        let _ = sx1.send(message);
         thread::sleep(Duration::from_secs(1));
     });
 
@@ -478,8 +483,11 @@ fn match_method_and_run<T>(
         .expect("could not get text");
 
     let _ = tx1.send(true);
-    let _ = tx.send(format!("formatting response... "));
+
+    let _ = sx.send(format!("formatting response... "));
     let rs = jsonformat::format(&rsp, jsonformat::Indentation::FourSpace);
 
-    let _ = tx.send(rs);
+    let _ = sx.send(rs);
+}
+}
 }
