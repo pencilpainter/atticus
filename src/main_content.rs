@@ -9,8 +9,10 @@ use floem::{
     style_class,
     views::{
         dyn_stack,
-        editor::core::{editor::EditType, selection::Selection},
-        editor::text::Document,
+        editor::{
+            core::{editor::EditType, selection::Selection},
+            text::Document,
+        },
         h_stack, label, labeled_radio_button, scroll, text_editor, text_input, v_stack,
         ButtonClass, Decorators,
     },
@@ -72,9 +74,25 @@ pub fn full_window_view() -> impl IntoView {
 
     let (method, set_method) = create_signal(Method::GET);
 
-    let body_label = text_editor("")
-        .style(|s| s.flex_grow(1.0).width_pct(100.))
+    let body_response = text_editor("")
+        .style(|s| {
+            s.flex_grow(1.0)
+                .width_pct(100.)
+                .font_family("".to_string())
+                .font_size(8)
+        })
         .read_only();
+
+    let body_field = text_editor("")
+        .placeholder("request body. . .")
+        .keyboard_navigatable()
+        .style(|s| {
+            s.flex_grow(0.5)
+                .width_pct(100.)
+                .min_height(150)
+                .font_family("".to_string())
+                .font_size(8)
+        });
 
     let top_bar = label(|| String::from("Top bar"))
         .style(|s| s.padding(10.0).width_full().height(TOPBAR_HEIGHT).margin(2));
@@ -99,7 +117,6 @@ pub fn full_window_view() -> impl IntoView {
 
     let urltext = create_rw_signal("https://example.com".to_string());
     let request_name = create_rw_signal("New request".to_string());
-    let bodytext = create_rw_signal("{}".to_string());
     let tokentext = create_rw_signal("".to_string());
     let headervaluetext = create_rw_signal("".to_string());
     let headertext = create_rw_signal("".to_string());
@@ -116,6 +133,9 @@ pub fn full_window_view() -> impl IntoView {
     //.unwrap_or(::im::Vector::<Collection>::new());
 
     //let collection_list = create_rw_signal(saved_coll);
+    //
+    let bf1 = body_field.doc().clone();
+    let bf2 = body_field.doc().clone();
 
     let collection_side_bar = scroll({
         v_stack((
@@ -125,7 +145,7 @@ pub fn full_window_view() -> impl IntoView {
                         name: request_name.get(),
                         url: urltext.get(),
                         method: method.get(),
-                        body: bodytext.get(),
+                        body: bf1.text().to_string(),
                         auth: (authtype.get(), tokentext.get()),
                         headers: current_header_list.get(),
                     })
@@ -162,19 +182,26 @@ pub fn full_window_view() -> impl IntoView {
                             .clone()
                             .to_string()
                             .class(ButtonClass)
-                            .on_click_stop(move |_| {
-                                let itm = item.clone();
-                                request_list.update(|_| {
-                                    request_name.set(itm.name.clone());
-                                    urltext.set(itm.url.to_string());
-                                    set_method.set(itm.method.clone());
-                                    bodytext.set(itm.body.clone().to_string());
-                                    current_header_list.update(|l| {
-                                        *l = itm.headers.clone();
-                                    });
-                                    tokentext.set(itm.auth.1.to_string());
-                                    authtype.set(itm.auth.0);
-                                })
+                            .on_click_stop({
+                                let bf22 = bf2.clone();
+                                move |_| {
+                                    let itm = item.clone();
+                                    request_list.update(|_| {
+                                        request_name.set(itm.name.clone());
+                                        urltext.set(itm.url.to_string());
+                                        set_method.set(itm.method.clone());
+                                        bf22.edit_single(
+                                            Selection::region(0, bf22.text().len()),
+                                            &itm.body.clone().to_string(),
+                                            EditType::InsertChars,
+                                        );
+                                        current_header_list.update(|l| {
+                                            *l = itm.headers.clone();
+                                        });
+                                        tokentext.set(itm.auth.1.to_string());
+                                        authtype.set(itm.auth.0);
+                                    })
+                                }
                             })
                             .style(|s| s.width(130)),
                     ))
@@ -223,8 +250,8 @@ pub fn full_window_view() -> impl IntoView {
         ),
     ));
 
-    let doc = body_label.doc().clone();
-    let doc2 = body_label.doc().clone();
+    let doc = body_response.doc().clone();
+    let doc2 = body_response.doc().clone();
 
     let (sx1, rx1) = bounded(1);
     let sx2 = sx1.clone();
@@ -329,7 +356,7 @@ pub fn full_window_view() -> impl IntoView {
             ))
         },
     )
-    .style(|s| s.flex_col().width_pct(100.));
+    .style(|s| s.width_pct(100.));
 
     let auth_bar = h_stack((
         dropdown_view::<AuthTypes>(authtype).style(|s| s.width(150)),
@@ -346,21 +373,25 @@ pub fn full_window_view() -> impl IntoView {
 
     let main_block = scroll(
         v_stack((
-            name_box,
-            methods_list,
-            url_bar,
-            body_field,
-            auth_bar,
-            header_add_bar,
-            header_bar,
-            label(move || status_text.get()),
-            body_label,
+            h_stack((
+                v_stack((
+                    v_stack((name_box, methods_list, url_bar, body_field, auth_bar))
+                        .style(|s| s.width_full()),
+                    v_stack((header_add_bar, header_bar)).style(|s| s.width_full()),
+                ))
+                .style(|s| s.width_full()),
+                send_button,
+            ))
+            .style(|s| s.width_full()),
+            status_text,
+            body_response,
         ))
         .style(|s| s.width_full().height_full()),
     )
     .style(|s| {
         s.flex_col()
-            .flex_basis(0)
+            .height_full()
+            .flex_basis(1.0)
             .flex_grow(1.0)
             .border_top(1.0)
             .border_color(Color::rgb8(205, 205, 205))
