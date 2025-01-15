@@ -24,6 +24,7 @@ use std::rc::Rc;
 use crate::auth_methods::{dropdown_view, AuthTypes};
 use crate::collections::Request; //Collection,
 use crate::request_methods::Method;
+use crate::response_tabs::tab_navigation_view;
 use std::io::prelude::*;
 use std::thread;
 use std::{fs::File, time::Duration, time::Instant};
@@ -368,7 +369,7 @@ pub fn full_window_view() -> impl IntoView {
             ))
             .style(|s| s.width_full()),
             status_text,
-            body_response,
+            tab_navigation_view(body_response.doc().clone()),
         ))
         .style(|s| s.width_full().height_full()),
     )
