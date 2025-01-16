@@ -377,7 +377,7 @@ pub fn full_window_view() -> impl IntoView {
             .style(|s| s.width_full()),
             status_text,
             body_response,
-            tab_navigation_view(),
+            //tab_navigation_view(),
         ))
         .style(|s| s.width_full().height_full()),
     )
@@ -488,6 +488,4 @@ fn match_method_and_run<T>(
     let rs = jsonformat::format(&rsp, jsonformat::Indentation::FourSpace);
 
     let _ = sx.send(rs);
-}
-}
 }

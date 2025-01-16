@@ -1,59 +1,48 @@
 use floem::{
-    event::EventListener,
     peniko::Color,
     reactive::{create_signal, ReadSignal, SignalGet, SignalUpdate, WriteSignal},
     style::{CursorStyle, Position},
     text::Weight,
     views::{container, h_stack, label, scroll, tab, v_stack, Decorators},
-    IntoView, View,
+    IntoView,
 };
 
-#[derive(Clone, Copy, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Eq, Hash, PartialEq, Debug)]
 enum Tab {
-    General,
-    Settings,
-    Feedback,
+    Response,
+    Headers,
+    Stats,
 }
 
-impl std::fmt::Display for Tab {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match *self {
-            Tab::General => write!(f, "General"),
-            Tab::Settings => write!(f, "Settings"),
-            Tab::Feedback => write!(f, "Feedback"),
-        }
-    }
-}
+//impl std::fmt::Display for Tab {
+//    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+//        match *self {
+//            Tab::Response => write!(f, "Response"),
+//            Tab::Headers => write!(f, "Headers"),
+//            Tab::Stats => write!(f, "Stats"),
+//        }
+//    }
+//}
 
 fn tab_button(
-    this_tab: Tab,
-    tabs: ReadSignal<im::Vector<Tab>>,
+    this_tab: String,
+    position: usize,
     set_active_tab: WriteSignal<usize>,
     active_tab: ReadSignal<usize>,
 ) -> impl IntoView {
-    label(move || this_tab)
-        .keyboard_navigable()
+    label(move || this_tab.clone())
+        .keyboard_navigatable()
         .on_click_stop(move |_| {
             set_active_tab.update(|v: &mut usize| {
-                *v = tabs
-                    .get_untracked()
-                    .iter()
-                    .position(|it| *it == this_tab)
-                    .unwrap();
+                *v = position;
             });
         })
         .style(move |s| {
             s.width(70)
                 .hover(|s| s.font_weight(Weight::BOLD).cursor(CursorStyle::Pointer))
-                .apply_if(
-                    active_tab.get()
-                        == tabs
-                            .get_untracked()
-                            .iter()
-                            .position(|it| *it == this_tab)
-                            .unwrap(),
-                    |s| s.font_weight(Weight::BOLD),
-                )
+                .apply_if(active_tab.get() == position, |s| {
+                    s.font_weight(Weight::BOLD)
+                })
         })
 }
 
@@ -61,16 +50,16 @@ const TABBAR_HEIGHT: f64 = 37.0;
 const CONTENT_PADDING: f64 = 10.0;
 
 pub fn tab_navigation_view() -> impl IntoView {
-    let tabs = vec![Tab::General, Tab::Settings, Tab::Feedback]
+    let tabs = vec![Tab::Response, Tab::Headers, Tab::Stats]
         .into_iter()
         .collect::<im::Vector<Tab>>();
     let (tabs, _set_tabs) = create_signal(tabs);
     let (active_tab, set_active_tab) = create_signal(0);
 
     let tabs_bar = h_stack((
-        tab_button(Tab::General, tabs, set_active_tab, active_tab),
-        tab_button(Tab::Settings, tabs, set_active_tab, active_tab),
-        tab_button(Tab::Feedback, tabs, set_active_tab, active_tab),
+        tab_button("Response".to_string(), 0, set_active_tab, active_tab),
+        tab_button("Headers".to_string(), 1, set_active_tab, active_tab),
+        tab_button("Stats".to_string(), 2, set_active_tab, active_tab),
     ))
     .style(|s| {
         s.flex_row()
@@ -88,7 +77,7 @@ pub fn tab_navigation_view() -> impl IntoView {
                 move || active_tab.get(),
                 move || tabs.get(),
                 |it| *it,
-                |it| container(label(move || format!("{}", it))),
+                |it| container(label(move || format!("{:?}", it))),
             )
             .style(|s| s.padding(CONTENT_PADDING).padding_bottom(10.0)),
         )
@@ -101,14 +90,5 @@ pub fn tab_navigation_view() -> impl IntoView {
             .width_full()
     });
 
-    let settings_view = v_stack((tabs_bar, main_content)).style(|s| s.width_full().height_full());
-
-    let id = settings_view.id();
-    settings_view.on_event_stop(EventListener::KeyUp, move |e| {
-        if let floem::event::Event::KeyUp(e) = e {
-            if e.key.logical_key == floem::keyboard::Key::Named(floem::keyboard::NamedKey::F11) {
-                id.inspect();
-            }
-        }
-    })
+    v_stack((tabs_bar, main_content)).style(|s| s.width_full().height_full())
 }
