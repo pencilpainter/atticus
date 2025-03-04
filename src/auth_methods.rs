@@ -4,7 +4,11 @@ use floem::{
     peniko::Color,
     reactive::{create_rw_signal, RwSignal, SignalGet, SignalUpdate},
     unit::UnitExt,
-    views::{container, dropdown::dropdown, label, stack, svg, Decorators},
+    views::{
+        container,
+        dropdown::{self, Dropdown},
+        label, stack, svg, Decorators,
+    },
     IntoView,
 };
 
@@ -40,14 +44,14 @@ pub fn dropdown_view<T>(augh_signal: RwSignal<AuthTypes>) -> impl IntoView {
                 s.items_center()
                     .padding(3.)
                     .border_radius(7.pct())
-                    .hover(move |s| s.background(Color::LIGHT_GRAY))
+                    .hover(move |s| s.background(Color::from_rgba8(50, 50, 50, 255)))
             }),
         ))
         .style(|s| s.items_center().justify_between().size_full())
         .into_any()
     };
 
-    dropdown(
+    Dropdown::custom(
         // Driving function
         move || AuthTypes::None,
         // main view

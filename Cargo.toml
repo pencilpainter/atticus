@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-reqwest = { version = "0.12.4", features = ["blocking"] }
+reqwest = { version = "0.12.4", features = ["blocking","brotli"] }
 floem = { git = "https://github.com/lapce/floem" }
 tokio = { version = "1.37.0", features = ["full"] }
 crossbeam = "0.8.4"

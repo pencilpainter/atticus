@@ -1,10 +1,11 @@
+#![windows_subsystem = "windows"]
+
 pub mod auth_methods;
 pub mod collections;
 pub mod environments;
 pub mod main_content;
 pub mod request_methods;
 pub mod response_tabs;
-use std::path::Path;
 
 use floem::{
     kurbo::Size,

@@ -1,7 +1,7 @@
 use floem::{
     peniko::Color,
     reactive::{create_rw_signal, SignalGet},
-    views::{label, scroll, virtual_stack, Decorators, VirtualDirection, VirtualItemSize},
+    views::{label, scroll, virtual_stack, Decorators},
     IntoView,
 };
 
@@ -15,8 +15,6 @@ pub fn environment_view<T>() -> impl IntoView {
 
     scroll({
         virtual_stack(
-            VirtualDirection::Vertical,
-            VirtualItemSize::Fixed(Box::new(|| SIDEBAR_ITEM_HEIGHT)),
             move || env_list.get(),
             move |item| *item,
             move |item| {
@@ -28,7 +26,7 @@ pub fn environment_view<T>() -> impl IntoView {
                         .height(SIDEBAR_ITEM_HEIGHT)
                         .items_start()
                         .border_bottom(1.0)
-                        .border_color(Color::rgb8(205, 205, 205))
+                        .border_color(Color::from_rgb8(205, 205, 205))
                 })
             },
         )
@@ -38,6 +36,6 @@ pub fn environment_view<T>() -> impl IntoView {
         s.width(SIDEBAR_WIDTH)
             .border_left(1.0)
             .border_top(1.0)
-            .border_color(Color::rgb8(205, 205, 205))
+            .border_color(Color::from_rgb8(205, 205, 205))
     })
 }

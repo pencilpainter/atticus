@@ -1,10 +1,9 @@
-use crossbeam_channel::bounded;
 use floem::{
     event::EventListener,
     ext_event::create_signal_from_channel,
-    keyboard::{Key, Modifiers, ModifiersState, NamedKey},
+    keyboard::{Key, ModifiersState, NamedKey},
     peniko::Color,
-    reactive::{create_effect, create_rw_signal, create_signal, RwSignal, SignalGet, SignalUpdate},
+    reactive::{create_effect, create_rw_signal, create_signal, SignalGet, SignalUpdate},
     style::Position,
     style_class,
     views::{
@@ -20,6 +19,7 @@ use floem::{
 };
 use jsonformat;
 use std::rc::Rc;
+use std::sync::mpsc;
 
 use crate::auth_methods::{dropdown_view, AuthTypes};
 use crate::collections::Request; //Collection,
@@ -43,24 +43,49 @@ fn send_request<T>(
     auth_type: AuthTypes,
     tkn_txt: String,
     url_txt: String,
-    content: Rc<dyn Document>,
-    sx1: crossbeam_channel::Sender<String>,
+    r_content: Rc<dyn Document>,
+    r_headers: Rc<dyn Document>,
+    r_stats: Rc<dyn Document>,
 ) {
-    let (sx, rx) = bounded(1);
-    let sig = create_signal_from_channel(rx.clone());
+    let (s_bod, r_bod) = mpsc::channel();
+    let sig_bod = create_signal_from_channel(r_bod);
+
+    let (s_head, r_head) = mpsc::channel();
+    let sig_head = create_signal_from_channel(r_head);
+
+    let (s_stat, r_stat) = mpsc::channel();
+    let sig_stat = create_signal_from_channel(r_stat);
 
     // get the response and send it to the channel signal
     thread::spawn(move || {
         match_method_and_run::<String>(
-            mthd, headers, bdy_txt, auth_type, tkn_txt, url_txt, sx, sx1,
+            mthd, headers, bdy_txt, auth_type, tkn_txt, url_txt, s_bod, s_head, s_stat,
         );
     });
 
     // when the channel sends the signal, write it to the edit.
     create_effect(move |_| {
-        if let Some(v2) = sig.get() {
-            content.edit_single(
-                Selection::region(0, content.text().len()),
+        if let Some(v2) = sig_bod.get() {
+            r_content.edit_single(
+                Selection::region(0, r_content.text().len()),
+                &v2,
+                EditType::InsertChars,
+            );
+        }
+    });
+    create_effect(move |_| {
+        if let Some(v2) = sig_head.get() {
+            r_headers.edit_single(
+                Selection::region(0, r_headers.text().len()),
+                &v2,
+                EditType::InsertChars,
+            );
+        }
+    });
+    create_effect(move |_| {
+        if let Some(v2) = sig_stat.get() {
+            r_stats.edit_single(
+                Selection::region(0, r_stats.text().len()),
                 &v2,
                 EditType::InsertChars,
             );
@@ -75,11 +100,13 @@ pub fn full_window_view() -> impl IntoView {
 
     let (method, set_method) = create_signal(Method::GET);
 
-    let body_response = text_editor("").read_only();
+    let body_response = text_editor("").read_only().style(|s| s.height_full());
+    let header_response = text_editor("").read_only().style(|s| s.height_full());
+    let stats_response = text_editor("").read_only().style(|s| s.height_full());
 
     let body_field = text_editor("")
         .placeholder("request body. . .")
-        .keyboard_navigatable()
+        .keyboard_navigable()
         .style(|s| {
             s.flex_grow(0.5)
                 .width_pct(100.)
@@ -135,14 +162,30 @@ pub fn full_window_view() -> impl IntoView {
         v_stack((
             "Save".class(ButtonClass).on_click_stop(move |_| {
                 request_list.update(|list| {
-                    list.push_back(Request {
+                    let mut upd = false;
+                    let new = Request {
                         name: request_name.get(),
                         url: urltext.get(),
                         method: method.get(),
                         body: bf1.text().to_string(),
                         auth: (authtype.get(), tokentext.get()),
                         headers: current_header_list.get(),
-                    })
+                    };
+                    for ele in list.iter_mut() {
+                        if ele.name == request_name.get() {
+                            ele.url = urltext.get();
+                            ele.method = method.get();
+                            ele.body = bf1.text().to_string();
+                            ele.auth = (authtype.get(), tokentext.get());
+                            ele.headers = current_header_list.get();
+
+                            upd = true;
+                        }
+                    }
+
+                    if !upd {
+                        list.push_back(new);
+                    }
                 });
                 let mut file = File::create("atticus.json").unwrap();
                 file.write(
@@ -208,7 +251,7 @@ pub fn full_window_view() -> impl IntoView {
         s.width(SIDEBAR_WIDTH)
             .border_right(1.0)
             .border_top(1.0)
-            .border_color(Color::rgb8(205, 205, 205))
+            .border_color(Color::from_rgb8(205, 205, 205))
     });
 
     let methods_list = h_stack((
@@ -244,18 +287,12 @@ pub fn full_window_view() -> impl IntoView {
         ),
     ));
 
-    let doc = body_response.doc().clone();
+    let doc1 = body_response.doc().clone();
     let doc2 = body_response.doc().clone();
-
-    let (sx1, rx1) = bounded(1);
-    let sx2 = sx1.clone();
-
-    let sig2 = create_signal_from_channel(rx1.clone());
-    create_effect(move |_| {
-        if let Some(v2) = sig2.get() {
-            status_text.update(|v| *v = v2);
-        }
-    });
+    let h_doc1 = header_response.doc().clone();
+    let h_doc2 = header_response.doc().clone();
+    let s_doc1 = stats_response.doc().clone();
+    let s_doc2 = stats_response.doc().clone();
 
     let bf3 = body_field.doc();
 
@@ -267,7 +304,6 @@ pub fn full_window_view() -> impl IntoView {
         let url_txt = urltext.get();
         let headers = current_header_list.get();
 
-        let sx0_clone = sx1.clone();
         send_request::<String>(
             mthd,
             headers,
@@ -275,8 +311,9 @@ pub fn full_window_view() -> impl IntoView {
             auth_type,
             tkn_txt,
             url_txt,
-            doc.clone(),
-            sx0_clone,
+            doc1.clone(),
+            h_doc1.clone(),
+            s_doc1.clone(),
         )
     });
 
@@ -284,10 +321,10 @@ pub fn full_window_view() -> impl IntoView {
 
     let url_bar = h_stack((text_input(urltext)
         .placeholder("Placeholder text")
-        .keyboard_navigatable()
+        .keyboard_navigable()
         .on_key_up(
             Key::Named(NamedKey::Enter),
-            Modifiers::from(ModifiersState::empty()),
+            move |m| m == ModifiersState::empty().into(),
             move |_| {
                 let mthd = method.get();
                 let bdy_txt = bf4.text().to_string();
@@ -295,7 +332,6 @@ pub fn full_window_view() -> impl IntoView {
                 let tkn_txt = tokentext.get();
                 let url_txt = urltext.get();
                 let headers = current_header_list.get();
-                let sx2_clone = sx2.clone();
                 send_request::<String>(
                     mthd,
                     headers,
@@ -304,7 +340,8 @@ pub fn full_window_view() -> impl IntoView {
                     tkn_txt,
                     url_txt,
                     doc2.clone(),
-                    sx2_clone,
+                    h_doc2.clone(),
+                    s_doc2.clone(),
                 )
             },
         )
@@ -313,17 +350,17 @@ pub fn full_window_view() -> impl IntoView {
 
     let name_box = h_stack((text_input(request_name)
         .placeholder("New Request")
-        .keyboard_navigatable()
+        .keyboard_navigable()
         .style(|s| s.flex_grow(1.0).width_pct(100.)),));
 
     let header_add_bar = h_stack((
         text_input(headertext)
             .placeholder("header")
-            .keyboard_navigatable()
+            .keyboard_navigable()
             .style(|s| s.flex_grow(1.0).width_pct(100.)),
         text_input(headervaluetext)
             .placeholder("value")
-            .keyboard_navigatable()
+            .keyboard_navigable()
             .style(|s| s.flex_grow(1.0).width_pct(100.)),
         "➕".class(ButtonClass).on_click_stop(move |_| {
             current_header_list.update(|v| v.push_back((headertext.get(), headervaluetext.get())));
@@ -340,8 +377,9 @@ pub fn full_window_view() -> impl IntoView {
             let header = itm.0.clone();
             let value = itm.1.clone();
             h_stack((
-                label(move || header.clone()).style(|s| s.flex_grow(1.0).width_pct(100.)),
-                label(move || value.clone()).style(|s| s.flex_grow(1.0).width_pct(100.)),
+                label(move || header.clone() + ":")
+                    .style(|s| s.flex_shrink(1.0).max_width(300.).padding_right(3)),
+                label(move || value.clone()).style(|s| s.flex_grow(1.0).max_width(600.)),
                 "➖"
                     .class(ButtonClass)
                     .on_click_stop(move |_| {
@@ -349,17 +387,18 @@ pub fn full_window_view() -> impl IntoView {
                             let _ = v.pop_back();
                         });
                     })
-                    .style(|s| s.flex_grow(1.0)),
+                    .style(|s| s.flex_shrink(1.0)),
             ))
+            .style(|s| s.width_pct(100.))
         },
     )
-    .style(|s| s.width_pct(100.));
+    .style(|s| s.width_pct(100.).flex_col());
 
     let auth_bar = h_stack((
         dropdown_view::<AuthTypes>(authtype).style(|s| s.width(150)),
         text_input(tokentext)
             .placeholder("bearer token . . .")
-            .keyboard_navigatable()
+            .keyboard_navigable()
             .style(|s| s.flex_grow(1.0).width_pct(100.)),
     ));
 
@@ -376,8 +415,12 @@ pub fn full_window_view() -> impl IntoView {
             ))
             .style(|s| s.width_full()),
             status_text,
-            body_response,
-            //tab_navigation_view(),
+            //body_response,
+            tab_navigation_view(
+                body_response.doc().clone(),
+                header_response.doc().clone(),
+                stats_response.doc().clone(),
+            ),
         ))
         .style(|s| s.width_full().height_full()),
     )
@@ -387,7 +430,7 @@ pub fn full_window_view() -> impl IntoView {
             .flex_basis(1.0)
             .flex_grow(1.0)
             .border_top(1.0)
-            .border_color(Color::rgb8(205, 205, 205))
+            .border_color(Color::from_rgb8(205, 205, 205))
     });
 
     let content_pane = h_stack((collection_side_bar, main_block)).style(|s| {
@@ -416,10 +459,13 @@ fn match_method_and_run<T>(
     auth: AuthTypes,
     tokentext: String,
     url: String,
-    sx: crossbeam_channel::Sender<String>,
-    sx1: crossbeam_channel::Sender<String>,
+    response_channel: mpsc::Sender<String>,
+    headers_channel: mpsc::Sender<String>,
+    status_channel: mpsc::Sender<String>,
 ) {
-    let c = reqwest::blocking::Client::new();
+    let cb = reqwest::blocking::Client::builder();
+
+    let c = cb.brotli(true).build().unwrap();
     let mut b;
     match mthd {
         Method::GET => {
@@ -459,33 +505,51 @@ fn match_method_and_run<T>(
 
     let start_time = Instant::now();
 
-    let _ = sx.send("sending request ... ".to_string());
+    let _ = response_channel.send("awaiting response ... ".to_string());
 
-    let (tx1, rx1) = bounded(1);
+    let sx1 = status_channel.clone();
+
+    let (tx1, rx1) = mpsc::channel();
     thread::spawn(move || loop {
         if let Ok(_) = rx1.try_recv() {
             break;
         }
 
-        let elapsed = start_time.elapsed();
-        let seconds = elapsed.as_secs();
-        let message = format!("sending request... Elapsed time: {}s", seconds);
+        let message = format!(
+            "sending request... Elapsed time: {} ms",
+            start_time.elapsed().as_millis()
+        );
 
         let _ = sx1.send(message);
-        thread::sleep(Duration::from_secs(1));
+        thread::sleep(Duration::from_millis(500));
     });
 
     let rsp = b
         .timeout(Duration::from_secs(3600))
         .send()
-        .expect("could not send")
-        .text()
-        .expect("could not get text");
+        .expect("could not send");
+
+    let hd = format!("{:?}", rsp.headers());
+    let _ = headers_channel.send(hd.clone());
+
+    let txt = rsp.text().expect("could not get text");
+
+    let message = format!("Duration: {} ms", start_time.elapsed().as_millis());
+
+    let _ = status_channel.send(message.clone());
 
     let _ = tx1.send(true);
+    let start_time = Instant::now();
+    let _ = response_channel.send(format!("formatting response... "));
 
-    let _ = sx.send(format!("formatting response... "));
-    let rs = jsonformat::format(&rsp, jsonformat::Indentation::FourSpace);
+    let rs = jsonformat::format(&txt, jsonformat::Indentation::FourSpace);
 
-    let _ = sx.send(rs);
+    let message = message
+        + &format!(
+            " \n\rFormatting took: {} ms",
+            start_time.elapsed().as_millis()
+        );
+    let _ = status_channel.send(message);
+
+    let _ = response_channel.send(rs);
 }
